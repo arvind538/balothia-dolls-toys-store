@@ -15,6 +15,18 @@ const sorts = {
     'price-desc': { price: -1 },
 };
 
+
+
+
+// Returns only the images that no other product is using,
+// so an image shared by a duplicated product is never deleted by mistake.
+const unusedImages = async (urls, excludeId) => {
+    if (!urls.length) return [];
+    const used = await Product.distinct('images', { _id: { $ne: excludeId }, images: { $in: urls } });
+    const usedSet = new Set(used);
+    return urls.filter((u) => !usedSet.has(u));
+};
+
 // GET /api/products?category=slug1,slug2&ageGroup=3-6,6-9&minPrice&maxPrice&rating&search&sort&page&limit&inStock&offers&bestSeller&featured
 exports.getProducts = asyncHandler(async (req, res) => {
     const { category, ageGroup, minPrice, maxPrice, rating, search, sort = 'newest', page = 1, limit = 12, inStock, offers, bestSeller, featured } = req.query;
@@ -62,6 +74,7 @@ exports.createProduct = asyncHandler(async (req, res) => {
     res.status(201).json(p);
 });
 
+
 exports.updateProduct = asyncHandler(async (req, res) => {
     const p = await Product.findById(req.params.id);
     if (!p) throw httpError(404, 'Product not found');
@@ -76,15 +89,46 @@ exports.updateProduct = asyncHandler(async (req, res) => {
         await logStock(p._id, p.stock - oldStock, p.stock > oldStock ? 'restock' : 'adjust', req.user._id);
     }
 
-    // jo images form se hata di, wo Cloudinary se bhi delete
+    // Images removed in the form are deleted from Cloudinary, unless another product still uses them.
     const removed = oldImages.filter((u) => !p.images.includes(u));
-    if (removed.length) deleteImages(removed).catch(() => { });
+    if (removed.length) {
+        unusedImages(removed, p._id).then((urls) => deleteImages(urls)).catch(() => { });
+    }
 
     res.json(p);
 });
 
 exports.deleteProduct = asyncHandler(async (req, res) => {
     const p = await Product.findByIdAndDelete(req.params.id);
-    if (p?.images?.length) deleteImages(p.images).catch(() => { });
-    res.json({ message: 'Deleted' });
+    if (p?.images?.length) {
+        unusedImages(p.images, p._id).then((urls) => deleteImages(urls)).catch(() => { });
+    }
+    res.json({ message: 'Product deleted' });
 });
+
+// exports.updateProduct = asyncHandler(async (req, res) => {
+//     const p = await Product.findById(req.params.id);
+//     if (!p) throw httpError(404, 'Product not found');
+
+//     const oldStock = p.stock;
+//     const oldImages = [...p.images];
+
+//     Object.assign(p, pick(req.body));
+//     await p.save();
+
+//     if (p.stock !== oldStock) {
+//         await logStock(p._id, p.stock - oldStock, p.stock > oldStock ? 'restock' : 'adjust', req.user._id);
+//     }
+
+//     // jo images form se hata di, wo Cloudinary se bhi delete
+//     const removed = oldImages.filter((u) => !p.images.includes(u));
+//     if (removed.length) deleteImages(removed).catch(() => { });
+
+//     res.json(p);
+// });
+
+// exports.deleteProduct = asyncHandler(async (req, res) => {
+//     const p = await Product.findByIdAndDelete(req.params.id);
+//     if (p?.images?.length) deleteImages(p.images).catch(() => { });
+//     res.json({ message: 'Deleted' });
+// });

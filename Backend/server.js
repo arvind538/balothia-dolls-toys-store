@@ -10,7 +10,7 @@ const connectDB = require('./config/db');
 const { notFound, errorHandler } = require('./middleware/error');
 
 connectDB();
-require('./utils/migrate').run().catch((e) => console.error('Migration error:', e.message));
+// require('./utils/migrate').run().catch((e) => console.error('Migration error:', e.message));
 const app = express();
 app.set('trust proxy', 1);
 

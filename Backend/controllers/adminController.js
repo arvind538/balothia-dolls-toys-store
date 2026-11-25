@@ -114,18 +114,52 @@ exports.notifications = asyncHandler(async (req, res) => {
 });
 
 /* ---------------- PRODUCTS / STOCK ---------------- */
+// exports.listProducts = asyncHandler(async (req, res) => {
+//     const { search, category, stock, page = 1, limit = 20 } = req.query;
+//     const q = {};
+//     if (search) q.name = { $regex: esc(search), $options: 'i' };
+//     if (category && mongoose.isValidObjectId(category)) q.category = category;
+//     if (stock === 'low') q.stock = { $lte: 5 };
+//     if (stock === 'out') q.stock = 0;
+//     const [items, total] = await Promise.all([
+//         Product.find(q).populate('category', 'name').sort({ createdAt: -1 }).skip((page - 1) * limit).limit(+limit),
+//         Product.countDocuments(q),
+//     ]);
+//     res.json({ items, total, pages: Math.ceil(total / limit) });
+// });
+
+
 exports.listProducts = asyncHandler(async (req, res) => {
-    const { search, category, stock, page = 1, limit = 20 } = req.query;
+    const { search, category, stock, status, sort = 'newest', page = 1, limit = 20 } = req.query;
     const q = {};
-    if (search) q.name = { $regex: esc(search), $options: 'i' };
+
+    if (search && search.trim()) {
+        const rx = { $regex: esc(search.trim()), $options: 'i' };
+        q.$or = [{ name: rx }, { tags: rx }];
+    }
     if (category && mongoose.isValidObjectId(category)) q.category = category;
     if (stock === 'low') q.stock = { $lte: 5 };
     if (stock === 'out') q.stock = 0;
+    if (status === 'active') q.isActive = true;
+    if (status === 'hidden') q.isActive = false;
+
+    const sorts = {
+        newest: { createdAt: -1 },
+        sold: { sold: -1, createdAt: -1 },
+        'stock-asc': { stock: 1 },
+        'price-asc': { price: 1 },
+        'price-desc': { price: -1 },
+        rating: { rating: -1 },
+        name: { name: 1 },
+    };
+    const lim = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+    const pg = Math.max(1, parseInt(page, 10) || 1);
+
     const [items, total] = await Promise.all([
-        Product.find(q).populate('category', 'name').sort({ createdAt: -1 }).skip((page - 1) * limit).limit(+limit),
+        Product.find(q).populate('category', 'name').sort(sorts[sort] || sorts.newest).skip((pg - 1) * lim).limit(lim),
         Product.countDocuments(q),
     ]);
-    res.json({ items, total, pages: Math.ceil(total / limit) });
+    res.json({ items, total, pages: Math.ceil(total / lim) });
 });
 
 exports.updateStock = asyncHandler(async (req, res) => {
